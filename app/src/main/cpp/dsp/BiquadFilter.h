@@ -17,6 +17,17 @@ public:
 
     void configure(BiquadType type, double sampleRate, double freqHz, double q, double gainDb = 0.0) noexcept;
 
+    inline void processMono(float& sample) noexcept {
+        if (bypassed_) {
+            return;
+        }
+        const double x = static_cast<double>(sample);
+        const double y = b0_ * x + z1L_;
+        z1L_ = b1_ * x - a1_ * y + z2L_;
+        z2L_ = b2_ * x - a2_ * y;
+        sample = static_cast<float>(y);
+    }
+
     inline void processStereo(float& left, float& right) noexcept {
         if (bypassed_) {
             return;
@@ -65,6 +76,12 @@ public:
         double gainDb,
         double q
     ) noexcept;
+
+    inline void processMono(float& sample) noexcept {
+        for (int i = 0; i < kNumEqBands; ++i) {
+            bands_[i].processMono(sample);
+        }
+    }
 
     inline void processStereo(float& left, float& right) noexcept {
         for (int i = 0; i < kNumEqBands; ++i) {

@@ -182,15 +182,15 @@ private fun SignalChainFlowBar(
     val sourceChip = if (isPlayerPlaying) {
         Triple("PLAYER", DspModuleTab.PLAYER, true)
     } else {
-        Triple("IN L/R", DspModuleTab.INPUT, !params.inputMute)
+        Triple("IN 1/2", DspModuleTab.INPUT, params.anyInputActive)
     }
     val stages = listOf(
         sourceChip,
-        Triple("PEQ 5B", DspModuleTab.EQ, !params.eqBypass && !params.bypassDsp),
-        Triple("XOVER", DspModuleTab.XOVER, !params.xoverBypass && !params.bypassDsp && (params.hpfEnabled || params.lpfEnabled)),
-        Triple("DELAY", DspModuleTab.DELAY, params.delayEnabled && !params.bypassDsp),
-        Triple("LIMIT", DspModuleTab.LIMITER, params.limiterEnabled && !params.bypassDsp),
-        Triple("OUT L/R", DspModuleTab.OUTPUT, !params.muteAll && (!params.outputMuteL || !params.outputMuteR))
+        Triple("PEQ L/R", DspModuleTab.EQ, params.anyEqActive && !params.bypassDsp),
+        Triple("XOVER L/R", DspModuleTab.XOVER, params.anyXoverActive && !params.bypassDsp),
+        Triple("DLY L/R", DspModuleTab.DELAY, params.anyDelayActive && !params.bypassDsp),
+        Triple("LIM L/R", DspModuleTab.LIMITER, params.anyLimiterActive && !params.bypassDsp),
+        Triple("OUT 1/2", DspModuleTab.OUTPUT, !params.muteAll && (!params.outputMuteL || !params.outputMuteR))
     )
 
     Surface(

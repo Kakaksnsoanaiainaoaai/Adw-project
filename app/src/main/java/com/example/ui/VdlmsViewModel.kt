@@ -9,6 +9,8 @@ import com.example.audio.AudioEngine
 import com.example.audio.AudioEngineState
 import com.example.audio.AudioHardwareInventory
 import com.example.audio.AudioTelemetry
+import com.example.audio.DspChannel
+import com.example.audio.InputSourceRoute
 import com.example.audio.LocalAudioPlayer
 import com.example.audio.MediaPlayerUiState
 import com.example.audio.NativeAudioBridge
@@ -31,6 +33,7 @@ import kotlinx.coroutines.launch
 
 data class VdlmsUiState(
     val activeTab: DspModuleTab = DspModuleTab.INPUT,
+    val selectedDspChannel: DspChannel = DspChannel.CH_L,
     val selectedEqBandIndex: Int = 0,
     val selectedEncoderId: String? = null,
     val parameters: DspParameters = FactoryPresets.all.first().parameters,
@@ -156,6 +159,10 @@ class VdlmsViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(activeTab = tab, selectedEncoderId = null) }
     }
 
+    fun selectDspChannel(channel: DspChannel) {
+        _uiState.update { it.copy(selectedDspChannel = channel, selectedEncoderId = null) }
+    }
+
     fun selectEncoder(id: String?) {
         _uiState.update { it.copy(selectedEncoderId = id) }
     }
@@ -240,14 +247,47 @@ class VdlmsViewModel(application: Application) : AndroidViewModel(application) {
         localAudioPlayer.cycleRepeatMode()
     }
 
-    // Input Stage
-    fun setInputGain(gainDb: Float) {
-        updateParameters(markModified = true) { it.copy(inputGainDb = gainDb.coerceIn(-24f, 12f)) }
+    // Input Stage & Input Source Routing Matrix
+    fun toggleInputLinked() {
+        updateParameters(markModified = true) { p ->
+            val next = !p.inputLinked
+            p.copy(
+                inputLinked = next,
+                inputGainDbR = if (next) p.inputGainDbL else p.inputGainDbR
+            )
+        }
         dspController.updateInput(_uiState.value.parameters)
     }
 
-    fun toggleInputMute() {
-        updateParameters(markModified = true) { it.copy(inputMute = !it.inputMute) }
+    fun setInputGainL(gainDb: Float) {
+        val clamped = gainDb.coerceIn(-24f, 12f)
+        updateParameters(markModified = true) { p ->
+            p.copy(
+                inputGainDbL = clamped,
+                inputGainDbR = if (p.inputLinked) clamped else p.inputGainDbR
+            )
+        }
+        dspController.updateInput(_uiState.value.parameters)
+    }
+
+    fun setInputGainR(gainDb: Float) {
+        val clamped = gainDb.coerceIn(-24f, 12f)
+        updateParameters(markModified = true) { p ->
+            p.copy(
+                inputGainDbR = clamped,
+                inputGainDbL = if (p.inputLinked) clamped else p.inputGainDbL
+            )
+        }
+        dspController.updateInput(_uiState.value.parameters)
+    }
+
+    fun toggleInputMuteL() {
+        updateParameters(markModified = true) { it.copy(inputMuteL = !it.inputMuteL) }
+        dspController.updateInput(_uiState.value.parameters)
+    }
+
+    fun toggleInputMuteR() {
+        updateParameters(markModified = true) { it.copy(inputMuteR = !it.inputMuteR) }
         dspController.updateInput(_uiState.value.parameters)
     }
 
@@ -261,15 +301,55 @@ class VdlmsViewModel(application: Application) : AndroidViewModel(application) {
         dspController.updateInput(_uiState.value.parameters)
     }
 
-    // Parametric EQ Stage (5 Bands: PEAK / LOW_SHELF / HIGH_SHELF)
+    fun setRouteSourceL(route: InputSourceRoute) {
+        updateParameters(markModified = true) { it.copy(routeSourceL = route) }
+        dspController.updateInput(_uiState.value.parameters)
+    }
+
+    fun setRouteSourceR(route: InputSourceRoute) {
+        updateParameters(markModified = true) { it.copy(routeSourceR = route) }
+        dspController.updateInput(_uiState.value.parameters)
+    }
+
+    // Per-Channel Parametric EQ Stage (5 Bands: PEAK / LOW_SHELF / HIGH_SHELF)
+    fun toggleEqChannelLinked() {
+        val activeCh = _uiState.value.selectedDspChannel
+        updateParameters(markModified = true) { p ->
+            val next = !p.eqChannelLinked
+            if (!next) {
+                p.copy(eqChannelLinked = false)
+            } else {
+                val srcBypass = p.eqBypassFor(activeCh)
+                val srcBands = p.eqBandsFor(activeCh)
+                p.copy(
+                    eqChannelLinked = true,
+                    eqBypassL = srcBypass,
+                    eqBypassR = srcBypass,
+                    eqBandsL = srcBands,
+                    eqBandsR = srcBands
+                )
+            }
+        }
+        dspController.updateEq(_uiState.value.parameters)
+    }
+
     fun toggleEqBypass() {
-        updateParameters(markModified = true) { it.copy(eqBypass = !it.eqBypass) }
+        val activeCh = _uiState.value.selectedDspChannel
+        updateParameters(markModified = true) { p ->
+            val next = !p.eqBypassFor(activeCh)
+            when {
+                p.eqChannelLinked -> p.copy(eqBypassL = next, eqBypassR = next)
+                activeCh == DspChannel.CH_L -> p.copy(eqBypassL = next)
+                else -> p.copy(eqBypassR = next)
+            }
+        }
         dspController.updateEq(_uiState.value.parameters)
     }
 
     fun updateEqBand(index: Int, transform: (EqBandState) -> EqBandState) {
+        val activeCh = _uiState.value.selectedDspChannel
         updateParameters(markModified = true) { params ->
-            val updated = params.eqBands.map { b ->
+            fun applyToList(list: List<EqBandState>): List<EqBandState> = list.map { b ->
                 if (b.index == index) {
                     val next = transform(b)
                     next.copy(
@@ -279,7 +359,14 @@ class VdlmsViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 } else b
             }
-            params.copy(eqBands = updated)
+            if (params.eqChannelLinked) {
+                val updated = applyToList(params.eqBandsFor(activeCh))
+                params.copy(eqBandsL = updated, eqBandsR = updated)
+            } else if (activeCh == DspChannel.CH_L) {
+                params.copy(eqBandsL = applyToList(params.eqBandsL))
+            } else {
+                params.copy(eqBandsR = applyToList(params.eqBandsR))
+            }
         }
         dspController.updateEq(_uiState.value.parameters)
     }
@@ -288,62 +375,133 @@ class VdlmsViewModel(application: Application) : AndroidViewModel(application) {
         updateEqBand(index) { it.copy(shape = shape) }
     }
 
-    // Crossover Stage
-    fun toggleXoverBypass() {
-        updateParameters(markModified = true) { it.copy(xoverBypass = !it.xoverBypass) }
+    // Per-Channel Crossover Stage
+    fun toggleXoverLinked() {
+        val activeCh = _uiState.value.selectedDspChannel
+        updateParameters(markModified = true) { p ->
+            val next = !p.xoverLinked
+            if (!next) {
+                p.copy(xoverLinked = false)
+            } else {
+                val byp = p.xoverBypassFor(activeCh)
+                val hpfEn = p.hpfEnabledFor(activeCh)
+                val hpfFreq = p.hpfFreqHzFor(activeCh)
+                val hpfType = p.hpfFilterTypeFor(activeCh)
+                val hpfSlope = p.hpfSlopeDbFor(activeCh)
+                val lpfEn = p.lpfEnabledFor(activeCh)
+                val lpfFreq = p.lpfFreqHzFor(activeCh)
+                val lpfType = p.lpfFilterTypeFor(activeCh)
+                val lpfSlope = p.lpfSlopeDbFor(activeCh)
+                p.copy(
+                    xoverLinked = true,
+                    xoverBypassL = byp,
+                    hpfEnabledL = hpfEn,
+                    hpfFreqHzL = hpfFreq,
+                    hpfFilterTypeL = hpfType,
+                    hpfSlopeDbL = hpfSlope,
+                    lpfEnabledL = lpfEn,
+                    lpfFreqHzL = lpfFreq,
+                    lpfFilterTypeL = lpfType,
+                    lpfSlopeDbL = lpfSlope,
+                    xoverBypassR = byp,
+                    hpfEnabledR = hpfEn,
+                    hpfFreqHzR = hpfFreq,
+                    hpfFilterTypeR = hpfType,
+                    hpfSlopeDbR = hpfSlope,
+                    lpfEnabledR = lpfEn,
+                    lpfFreqHzR = lpfFreq,
+                    lpfFilterTypeR = lpfType,
+                    lpfSlopeDbR = lpfSlope
+                )
+            }
+        }
         dspController.updateCrossover(_uiState.value.parameters)
+    }
+
+    private fun updateActiveXover(transformL: (DspParameters) -> DspParameters, transformR: (DspParameters) -> DspParameters) {
+        val activeCh = _uiState.value.selectedDspChannel
+        updateParameters(markModified = true) { p ->
+            when {
+                p.xoverLinked -> transformR(transformL(p))
+                activeCh == DspChannel.CH_L -> transformL(p)
+                else -> transformR(p)
+            }
+        }
+        dspController.updateCrossover(_uiState.value.parameters)
+    }
+
+    fun toggleXoverBypass() {
+        val next = !_uiState.value.parameters.xoverBypassFor(_uiState.value.selectedDspChannel)
+        updateActiveXover({ it.copy(xoverBypassL = next) }, { it.copy(xoverBypassR = next) })
     }
 
     fun toggleHpfEnabled() {
-        updateParameters(markModified = true) { it.copy(hpfEnabled = !it.hpfEnabled) }
-        dspController.updateCrossover(_uiState.value.parameters)
+        val next = !_uiState.value.parameters.hpfEnabledFor(_uiState.value.selectedDspChannel)
+        updateActiveXover({ it.copy(hpfEnabledL = next) }, { it.copy(hpfEnabledR = next) })
     }
 
     fun setHpfFreq(freqHz: Float) {
-        updateParameters(markModified = true) { it.copy(hpfFreqHz = freqHz.coerceIn(20f, 5000f)) }
-        dspController.updateCrossover(_uiState.value.parameters)
+        val clamped = freqHz.coerceIn(20f, 5000f)
+        updateActiveXover({ it.copy(hpfFreqHzL = clamped) }, { it.copy(hpfFreqHzR = clamped) })
     }
 
     fun setHpfFilterType(type: XoverFilterType) {
-        updateParameters(markModified = true) { it.copy(hpfFilterType = type) }
-        dspController.updateCrossover(_uiState.value.parameters)
+        updateActiveXover({ it.copy(hpfFilterTypeL = type) }, { it.copy(hpfFilterTypeR = type) })
     }
 
     fun setHpfSlopeDb(slope: XoverSlopeDb) {
-        updateParameters(markModified = true) { it.copy(hpfSlopeDb = slope) }
-        dspController.updateCrossover(_uiState.value.parameters)
+        updateActiveXover({ it.copy(hpfSlopeDbL = slope) }, { it.copy(hpfSlopeDbR = slope) })
     }
 
     fun toggleLpfEnabled() {
-        updateParameters(markModified = true) { it.copy(lpfEnabled = !it.lpfEnabled) }
-        dspController.updateCrossover(_uiState.value.parameters)
+        val next = !_uiState.value.parameters.lpfEnabledFor(_uiState.value.selectedDspChannel)
+        updateActiveXover({ it.copy(lpfEnabledL = next) }, { it.copy(lpfEnabledR = next) })
     }
 
     fun setLpfFreq(freqHz: Float) {
-        updateParameters(markModified = true) { it.copy(lpfFreqHz = freqHz.coerceIn(200f, 20000f)) }
-        dspController.updateCrossover(_uiState.value.parameters)
+        val clamped = freqHz.coerceIn(200f, 20000f)
+        updateActiveXover({ it.copy(lpfFreqHzL = clamped) }, { it.copy(lpfFreqHzR = clamped) })
     }
 
     fun setLpfFilterType(type: XoverFilterType) {
-        updateParameters(markModified = true) { it.copy(lpfFilterType = type) }
-        dspController.updateCrossover(_uiState.value.parameters)
+        updateActiveXover({ it.copy(lpfFilterTypeL = type) }, { it.copy(lpfFilterTypeR = type) })
     }
 
     fun setLpfSlopeDb(slope: XoverSlopeDb) {
-        updateParameters(markModified = true) { it.copy(lpfSlopeDb = slope) }
-        dspController.updateCrossover(_uiState.value.parameters)
+        updateActiveXover({ it.copy(lpfSlopeDbL = slope) }, { it.copy(lpfSlopeDbR = slope) })
     }
 
-    // Delay Stage
-    fun toggleDelayEnabled() {
-        updateParameters(markModified = true) { it.copy(delayEnabled = !it.delayEnabled) }
+    // Per-Channel Delay Stage
+    fun toggleDelayEnabledL() {
+        updateParameters(markModified = true) { p ->
+            val next = !p.delayEnabledL
+            p.copy(
+                delayEnabledL = next,
+                delayEnabledR = if (p.delayLinked) next else p.delayEnabledR
+            )
+        }
+        dspController.updateDelay(_uiState.value.parameters)
+    }
+
+    fun toggleDelayEnabledR() {
+        updateParameters(markModified = true) { p ->
+            val next = !p.delayEnabledR
+            p.copy(
+                delayEnabledR = next,
+                delayEnabledL = if (p.delayLinked) next else p.delayEnabledL
+            )
+        }
         dspController.updateDelay(_uiState.value.parameters)
     }
 
     fun toggleDelayLinked() {
         updateParameters(markModified = true) { p ->
             val nextLinked = !p.delayLinked
-            p.copy(delayLinked = nextLinked, delayMsR = if (nextLinked) p.delayMsL else p.delayMsR)
+            p.copy(
+                delayLinked = nextLinked,
+                delayEnabledR = if (nextLinked) p.delayEnabledL else p.delayEnabledR,
+                delayMsR = if (nextLinked) p.delayMsL else p.delayMsR
+            )
         }
         dspController.updateDelay(_uiState.value.parameters)
     }
@@ -364,30 +522,97 @@ class VdlmsViewModel(application: Application) : AndroidViewModel(application) {
         dspController.updateDelay(_uiState.value.parameters)
     }
 
-    // Limiter Stage
-    fun toggleLimiterEnabled() {
-        updateParameters(markModified = true) { it.copy(limiterEnabled = !it.limiterEnabled) }
+    // Per-Channel / Linked Limiter Stage
+    fun toggleLimiterLinked() {
+        val activeCh = _uiState.value.selectedDspChannel
+        updateParameters(markModified = true) { p ->
+            val next = !p.limiterLinked
+            if (!next) {
+                p.copy(limiterLinked = false)
+            } else {
+                val en = p.limiterEnabledFor(activeCh)
+                val thr = p.limiterThresholdDbFor(activeCh)
+                val atk = p.limiterAttackMsFor(activeCh)
+                val rel = p.limiterReleaseMsFor(activeCh)
+                p.copy(
+                    limiterLinked = true,
+                    limiterEnabledL = en,
+                    limiterThresholdDbL = thr,
+                    limiterAttackMsL = atk,
+                    limiterReleaseMsL = rel,
+                    limiterEnabledR = en,
+                    limiterThresholdDbR = thr,
+                    limiterAttackMsR = atk,
+                    limiterReleaseMsR = rel
+                )
+            }
+        }
         dspController.updateLimiter(_uiState.value.parameters)
+    }
+
+    private fun updateActiveLimiter(transformL: (DspParameters) -> DspParameters, transformR: (DspParameters) -> DspParameters) {
+        val activeCh = _uiState.value.selectedDspChannel
+        updateParameters(markModified = true) { p ->
+            when {
+                p.limiterLinked -> transformR(transformL(p))
+                activeCh == DspChannel.CH_L -> transformL(p)
+                else -> transformR(p)
+            }
+        }
+        dspController.updateLimiter(_uiState.value.parameters)
+    }
+
+    fun toggleLimiterEnabled() {
+        val next = !_uiState.value.parameters.limiterEnabledFor(_uiState.value.selectedDspChannel)
+        updateActiveLimiter({ it.copy(limiterEnabledL = next) }, { it.copy(limiterEnabledR = next) })
     }
 
     fun setLimiterThreshold(db: Float) {
-        updateParameters(markModified = true) { it.copy(limiterThresholdDb = db.coerceIn(-24f, 0f)) }
-        dspController.updateLimiter(_uiState.value.parameters)
+        val clamped = db.coerceIn(-24f, 0f)
+        updateActiveLimiter({ it.copy(limiterThresholdDbL = clamped) }, { it.copy(limiterThresholdDbR = clamped) })
     }
 
     fun setLimiterAttack(ms: Float) {
-        updateParameters(markModified = true) { it.copy(limiterAttackMs = ms.coerceIn(0.5f, 50f)) }
-        dspController.updateLimiter(_uiState.value.parameters)
+        val clamped = ms.coerceIn(0.5f, 50f)
+        updateActiveLimiter({ it.copy(limiterAttackMsL = clamped) }, { it.copy(limiterAttackMsR = clamped) })
     }
 
     fun setLimiterRelease(ms: Float) {
-        updateParameters(markModified = true) { it.copy(limiterReleaseMs = ms.coerceIn(20f, 1000f)) }
-        dspController.updateLimiter(_uiState.value.parameters)
+        val clamped = ms.coerceIn(20f, 1000f)
+        updateActiveLimiter({ it.copy(limiterReleaseMsL = clamped) }, { it.copy(limiterReleaseMsR = clamped) })
     }
 
-    // Output Stage
-    fun setOutputGain(gainDb: Float) {
-        updateParameters(markModified = true) { it.copy(outputGainDb = gainDb.coerceIn(-40f, 12f)) }
+    // Output Stage (Independent L/R + Link)
+    fun toggleOutputLinked() {
+        updateParameters(markModified = true) { p ->
+            val next = !p.outputLinked
+            p.copy(
+                outputLinked = next,
+                outputGainDbR = if (next) p.outputGainDbL else p.outputGainDbR
+            )
+        }
+        dspController.updateOutput(_uiState.value.parameters)
+    }
+
+    fun setOutputGainL(gainDb: Float) {
+        val clamped = gainDb.coerceIn(-40f, 12f)
+        updateParameters(markModified = true) { p ->
+            p.copy(
+                outputGainDbL = clamped,
+                outputGainDbR = if (p.outputLinked) clamped else p.outputGainDbR
+            )
+        }
+        dspController.updateOutput(_uiState.value.parameters)
+    }
+
+    fun setOutputGainR(gainDb: Float) {
+        val clamped = gainDb.coerceIn(-40f, 12f)
+        updateParameters(markModified = true) { p ->
+            p.copy(
+                outputGainDbR = clamped,
+                outputGainDbL = if (p.outputLinked) clamped else p.outputGainDbL
+            )
+        }
         dspController.updateOutput(_uiState.value.parameters)
     }
 

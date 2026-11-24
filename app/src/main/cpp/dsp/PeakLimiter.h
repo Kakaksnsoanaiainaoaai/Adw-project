@@ -8,6 +8,40 @@ public:
     void reset() noexcept;
     void configure(bool enabled, float thresholdDb, float attackMs, float releaseMs) noexcept;
 
+    inline void processMono(float& sample) noexcept {
+        if (!enabled_) {
+            lastGrDb_ = 0.0f;
+            return;
+        }
+        const float peak = sample < 0.0f ? -sample : sample;
+
+        if (peak > envelope_) {
+            envelope_ = attackCoeff_ * envelope_ + (1.0f - attackCoeff_) * peak;
+        } else {
+            envelope_ = releaseCoeff_ * envelope_ + (1.0f - releaseCoeff_) * peak;
+        }
+
+        float gain = 1.0f;
+        if (envelope_ > thresholdLin_ && envelope_ > 1e-9f) {
+            gain = thresholdLin_ / envelope_;
+        }
+
+        sample *= gain;
+
+        const float outPeak = sample < 0.0f ? -sample : sample;
+        if (outPeak > 0.995f) {
+            const float clipScale = 0.995f / outPeak;
+            sample *= clipScale;
+            gain *= clipScale;
+        }
+
+        const float grDb = gain < 0.9999f ? 20.0f * log10Approx(gain) : 0.0f;
+        lastGrDb_ = grDb;
+        if (grDb < blockMinGrDb_) {
+            blockMinGrDb_ = grDb;
+        }
+    }
+
     inline void processStereo(float& left, float& right) noexcept {
         if (!enabled_) {
             lastGrDb_ = 0.0f;

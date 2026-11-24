@@ -2,7 +2,7 @@
 
 namespace adw::dsp {
 
-// Dedicated stereo gain, mute, and independent L/R polarity invert block
+// Dedicated stereo gain, mute, and independent L/R gain/polarity invert block
 // with click-free exponential gain smoothing.
 class GainStage {
 public:
@@ -10,7 +10,8 @@ public:
     void reset() noexcept;
 
     void configure(
-        float gainDb,
+        float gainDbL,
+        float gainDbR,
         bool muteL,
         bool muteR,
         bool invertL,

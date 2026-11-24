@@ -29,6 +29,22 @@ enum class TestSignalMode(val code: Int, val label: String) {
     PINK_NOISE(2, "PINK NOISE (-18 dBFS)")
 }
 
+enum class InputSourceRoute(val code: Int, val label: String, val shortLabel: String) {
+    IN_1_LEFT(0, "Input 1 (L)", "IN 1 (L)"),
+    IN_2_RIGHT(1, "Input 2 (R)", "IN 2 (R)"),
+    SUM_L_R(2, "Sum (IN 1 + IN 2)", "IN 1+2");
+
+    companion object {
+        fun fromCode(code: Int): InputSourceRoute =
+            entries.firstOrNull { it.code == code } ?: IN_1_LEFT
+    }
+}
+
+enum class DspChannel(val index: Int, val label: String, val shortLabel: String, val outputLabel: String) {
+    CH_L(0, "CH 1 (LEFT)", "CH 1 (L)", "OUT 1 (L)"),
+    CH_R(1, "CH 2 (RIGHT)", "CH 2 (R)", "OUT 2 (R)")
+}
+
 data class AudioDeviceEndpoint(
     val id: Int,
     val name: String,
@@ -53,6 +69,8 @@ data class AudioTelemetry(
     val outputHoldL: Float = 0f,
     val outputHoldR: Float = 0f,
     val limiterGrDb: Float = 0f,
+    val limiterGrDbL: Float = 0f,
+    val limiterGrDbR: Float = 0f,
     val sampleRate: Int = 48000,
     val bufferSizeFrames: Int = 0,
     val framesPerBurst: Int = 0,

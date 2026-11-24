@@ -35,6 +35,15 @@ public:
         XoverSlopeDb lpfSlope
     ) noexcept;
 
+    inline void processMono(float& sample) noexcept {
+        for (int i = 0; i < kMaxStages; ++i) {
+            hpfStages_[i].processMono(sample);
+        }
+        for (int i = 0; i < kMaxStages; ++i) {
+            lpfStages_[i].processMono(sample);
+        }
+    }
+
     inline void processStereo(float& left, float& right) noexcept {
         for (int i = 0; i < kMaxStages; ++i) {
             hpfStages_[i].processStereo(left, right);

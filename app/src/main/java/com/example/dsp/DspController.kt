@@ -2,6 +2,7 @@ package com.example.dsp
 
 import com.example.audio.AudioEngineBridge
 import com.example.audio.AudioTelemetry
+import com.example.audio.DspChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -71,38 +72,13 @@ class DspController(
 
     fun pushAllParameters(p: DspParameters) {
         lastParameters = p
-        bridge.setGlobalState(p.bypassDsp, p.muteAll, p.testSignalMode.code)
-        bridge.setInputParams(p.inputGainDb, p.inputMute, p.inputInvertL, p.inputInvertR)
-        bridge.setEqBypass(p.eqBypass)
-        for (band in p.eqBands) {
-            bridge.setEqBand(
-                bandIndex = band.index,
-                enabled = band.enabled,
-                filterShape = band.shape.code,
-                freqHz = band.freqHz,
-                gainDb = band.gainDb,
-                q = band.q
-            )
-        }
-        bridge.setCrossoverParams(
-            bypass = p.xoverBypass,
-            hpfEnabled = p.hpfEnabled,
-            hpfFreqHz = p.hpfFreqHz,
-            hpfFilterType = p.hpfFilterType.code,
-            hpfSlopeDb = p.hpfSlopeDb.slopeDb,
-            lpfEnabled = p.lpfEnabled,
-            lpfFreqHz = p.lpfFreqHz,
-            lpfFilterType = p.lpfFilterType.code,
-            lpfSlopeDb = p.lpfSlopeDb.slopeDb
-        )
-        bridge.setDelayParams(p.delayEnabled, p.delayMsL, p.delayMsR)
-        bridge.setLimiterParams(
-            p.limiterEnabled,
-            p.limiterThresholdDb,
-            p.limiterAttackMs,
-            p.limiterReleaseMs
-        )
-        bridge.setOutputParams(p.outputGainDb, p.outputMuteL, p.outputMuteR, p.outputInvertL, p.outputInvertR)
+        updateGlobal(p)
+        updateInput(p)
+        updateEq(p)
+        updateCrossover(p)
+        updateDelay(p)
+        updateLimiter(p)
+        updateOutput(p)
     }
 
     fun updateGlobal(p: DspParameters) {
@@ -112,14 +88,36 @@ class DspController(
 
     fun updateInput(p: DspParameters) {
         lastParameters = p
-        bridge.setInputParams(p.inputGainDb, p.inputMute, p.inputInvertL, p.inputInvertR)
+        bridge.setInputParams(
+            gainDbL = p.inputGainDbL,
+            gainDbR = p.inputGainDbR,
+            muteL = p.inputMuteL,
+            muteR = p.inputMuteR,
+            invertL = p.inputInvertL,
+            invertR = p.inputInvertR,
+            routeSourceL = p.routeSourceL.code,
+            routeSourceR = p.routeSourceR.code
+        )
     }
 
     fun updateEq(p: DspParameters) {
         lastParameters = p
-        bridge.setEqBypass(p.eqBypass)
-        for (band in p.eqBands) {
+        bridge.setEqBypass(DspChannel.CH_L.index, p.eqBypassL)
+        for (band in p.eqBandsL) {
             bridge.setEqBand(
+                channelIndex = DspChannel.CH_L.index,
+                bandIndex = band.index,
+                enabled = band.enabled,
+                filterShape = band.shape.code,
+                freqHz = band.freqHz,
+                gainDb = band.gainDb,
+                q = band.q
+            )
+        }
+        bridge.setEqBypass(DspChannel.CH_R.index, p.eqBypassR)
+        for (band in p.eqBandsR) {
+            bridge.setEqBand(
+                channelIndex = DspChannel.CH_R.index,
                 bandIndex = band.index,
                 enabled = band.enabled,
                 filterShape = band.shape.code,
@@ -133,36 +131,66 @@ class DspController(
     fun updateCrossover(p: DspParameters) {
         lastParameters = p
         bridge.setCrossoverParams(
-            bypass = p.xoverBypass,
-            hpfEnabled = p.hpfEnabled,
-            hpfFreqHz = p.hpfFreqHz,
-            hpfFilterType = p.hpfFilterType.code,
-            hpfSlopeDb = p.hpfSlopeDb.slopeDb,
-            lpfEnabled = p.lpfEnabled,
-            lpfFreqHz = p.lpfFreqHz,
-            lpfFilterType = p.lpfFilterType.code,
-            lpfSlopeDb = p.lpfSlopeDb.slopeDb
+            channelIndex = DspChannel.CH_L.index,
+            bypass = p.xoverBypassL,
+            hpfEnabled = p.hpfEnabledL,
+            hpfFreqHz = p.hpfFreqHzL,
+            hpfFilterType = p.hpfFilterTypeL.code,
+            hpfSlopeDb = p.hpfSlopeDbL.slopeDb,
+            lpfEnabled = p.lpfEnabledL,
+            lpfFreqHz = p.lpfFreqHzL,
+            lpfFilterType = p.lpfFilterTypeL.code,
+            lpfSlopeDb = p.lpfSlopeDbL.slopeDb
+        )
+        bridge.setCrossoverParams(
+            channelIndex = DspChannel.CH_R.index,
+            bypass = p.xoverBypassR,
+            hpfEnabled = p.hpfEnabledR,
+            hpfFreqHz = p.hpfFreqHzR,
+            hpfFilterType = p.hpfFilterTypeR.code,
+            hpfSlopeDb = p.hpfSlopeDbR.slopeDb,
+            lpfEnabled = p.lpfEnabledR,
+            lpfFreqHz = p.lpfFreqHzR,
+            lpfFilterType = p.lpfFilterTypeR.code,
+            lpfSlopeDb = p.lpfSlopeDbR.slopeDb
         )
     }
 
     fun updateDelay(p: DspParameters) {
         lastParameters = p
-        bridge.setDelayParams(p.delayEnabled, p.delayMsL, p.delayMsR)
+        bridge.setDelayParams(p.delayEnabledL, p.delayEnabledR, p.delayMsL, p.delayMsR)
     }
 
     fun updateLimiter(p: DspParameters) {
         lastParameters = p
         bridge.setLimiterParams(
-            p.limiterEnabled,
-            p.limiterThresholdDb,
-            p.limiterAttackMs,
-            p.limiterReleaseMs
+            channelIndex = DspChannel.CH_L.index,
+            linked = p.limiterLinked,
+            enabled = p.limiterEnabledL,
+            thresholdDb = p.limiterThresholdDbL,
+            attackMs = p.limiterAttackMsL,
+            releaseMs = p.limiterReleaseMsL
+        )
+        bridge.setLimiterParams(
+            channelIndex = DspChannel.CH_R.index,
+            linked = p.limiterLinked,
+            enabled = p.limiterEnabledR,
+            thresholdDb = p.limiterThresholdDbR,
+            attackMs = p.limiterAttackMsR,
+            releaseMs = p.limiterReleaseMsR
         )
     }
 
     fun updateOutput(p: DspParameters) {
         lastParameters = p
-        bridge.setOutputParams(p.outputGainDb, p.outputMuteL, p.outputMuteR, p.outputInvertL, p.outputInvertR)
+        bridge.setOutputParams(
+            gainDbL = p.outputGainDbL,
+            gainDbR = p.outputGainDbR,
+            muteL = p.outputMuteL,
+            muteR = p.outputMuteR,
+            invertL = p.outputInvertL,
+            invertR = p.outputInvertR
+        )
     }
 
     private fun startTelemetryLoop() {

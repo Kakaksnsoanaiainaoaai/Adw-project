@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <algorithm>
 #include <memory>
 #include "../audio_engine.h"
 
@@ -63,16 +64,24 @@ JNIEXPORT void JNICALL
 Java_com_example_audio_NativeAudioBridge_nativeSetInputParams(
     JNIEnv* /*env*/,
     jobject /*thiz*/,
-    jfloat gainDb,
-    jboolean mute,
+    jfloat gainDbL,
+    jfloat gainDbR,
+    jboolean muteL,
+    jboolean muteR,
     jboolean invertL,
-    jboolean invertR
+    jboolean invertR,
+    jint routeSourceL,
+    jint routeSourceR
 ) {
     ensureEngine().dsp().setInputParams(
-        gainDb,
-        mute == JNI_TRUE,
+        gainDbL,
+        gainDbR,
+        muteL == JNI_TRUE,
+        muteR == JNI_TRUE,
         invertL == JNI_TRUE,
-        invertR == JNI_TRUE
+        invertR == JNI_TRUE,
+        routeSourceL,
+        routeSourceR
     );
 }
 
@@ -80,15 +89,17 @@ JNIEXPORT void JNICALL
 Java_com_example_audio_NativeAudioBridge_nativeSetEqBypass(
     JNIEnv* /*env*/,
     jobject /*thiz*/,
+    jint channelIndex,
     jboolean bypass
 ) {
-    ensureEngine().dsp().setEqBypass(bypass == JNI_TRUE);
+    ensureEngine().dsp().setEqBypass(channelIndex, bypass == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL
 Java_com_example_audio_NativeAudioBridge_nativeSetEqBand(
     JNIEnv* /*env*/,
     jobject /*thiz*/,
+    jint channelIndex,
     jint bandIndex,
     jboolean enabled,
     jint filterShape,
@@ -97,6 +108,7 @@ Java_com_example_audio_NativeAudioBridge_nativeSetEqBand(
     jfloat q
 ) {
     ensureEngine().dsp().setEqBand(
+        channelIndex,
         bandIndex,
         enabled == JNI_TRUE,
         filterShape,
@@ -110,6 +122,7 @@ JNIEXPORT void JNICALL
 Java_com_example_audio_NativeAudioBridge_nativeSetCrossoverParams(
     JNIEnv* /*env*/,
     jobject /*thiz*/,
+    jint channelIndex,
     jboolean bypass,
     jboolean hpfEnabled,
     jfloat hpfFreqHz,
@@ -121,6 +134,7 @@ Java_com_example_audio_NativeAudioBridge_nativeSetCrossoverParams(
     jint lpfSlopeDb
 ) {
     ensureEngine().dsp().setCrossoverParams(
+        channelIndex,
         bypass == JNI_TRUE,
         hpfEnabled == JNI_TRUE,
         hpfFreqHz,
@@ -137,12 +151,14 @@ JNIEXPORT void JNICALL
 Java_com_example_audio_NativeAudioBridge_nativeSetDelayParams(
     JNIEnv* /*env*/,
     jobject /*thiz*/,
-    jboolean enabled,
+    jboolean enabledL,
+    jboolean enabledR,
     jfloat delayMsL,
     jfloat delayMsR
 ) {
     ensureEngine().dsp().setDelayParams(
-        enabled == JNI_TRUE,
+        enabledL == JNI_TRUE,
+        enabledR == JNI_TRUE,
         delayMsL,
         delayMsR
     );
@@ -152,12 +168,16 @@ JNIEXPORT void JNICALL
 Java_com_example_audio_NativeAudioBridge_nativeSetLimiterParams(
     JNIEnv* /*env*/,
     jobject /*thiz*/,
+    jint channelIndex,
+    jboolean linked,
     jboolean enabled,
     jfloat thresholdDb,
     jfloat attackMs,
     jfloat releaseMs
 ) {
     ensureEngine().dsp().setLimiterParams(
+        channelIndex,
+        linked == JNI_TRUE,
         enabled == JNI_TRUE,
         thresholdDb,
         attackMs,
@@ -169,14 +189,16 @@ JNIEXPORT void JNICALL
 Java_com_example_audio_NativeAudioBridge_nativeSetOutputParams(
     JNIEnv* /*env*/,
     jobject /*thiz*/,
-    jfloat gainDb,
+    jfloat gainDbL,
+    jfloat gainDbR,
     jboolean muteL,
     jboolean muteR,
     jboolean invertL,
     jboolean invertR
 ) {
     ensureEngine().dsp().setOutputParams(
-        gainDb,
+        gainDbL,
+        gainDbR,
         muteL == JNI_TRUE,
         muteR == JNI_TRUE,
         invertL == JNI_TRUE,
@@ -200,10 +222,10 @@ Java_com_example_audio_NativeAudioBridge_nativeGetTelemetry(
 ) {
     if (outArray == nullptr) return;
     const jsize len = env->GetArrayLength(outArray);
-    if (len < 21) return;
+    if (len < 23) return;
 
     const auto t = ensureEngine().getTelemetry();
-    jfloat buf[21];
+    jfloat buf[23];
     buf[0] = t.meters.inputPeakL;
     buf[1] = t.meters.inputPeakR;
     buf[2] = t.meters.inputRmsL;
@@ -225,8 +247,10 @@ Java_com_example_audio_NativeAudioBridge_nativeGetTelemetry(
     buf[18] = static_cast<float>(t.xRunCount);
     buf[19] = static_cast<float>(t.engineState);
     buf[20] = t.streamDisconnected ? -1.0f : static_cast<float>(t.audioApi);
+    buf[21] = t.meters.limiterGrDbL;
+    buf[22] = t.meters.limiterGrDbR;
 
-    env->SetFloatArrayRegion(outArray, 0, 21, buf);
+    env->SetFloatArrayRegion(outArray, 0, 23, buf);
 }
 
 JNIEXPORT jfloat JNICALL

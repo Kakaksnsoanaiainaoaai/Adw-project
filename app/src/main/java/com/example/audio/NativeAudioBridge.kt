@@ -15,11 +15,21 @@ interface AudioEngineBridge {
 
     fun setGlobalState(bypassDsp: Boolean, muteAll: Boolean, testSignalMode: Int)
 
-    fun setInputParams(gainDb: Float, mute: Boolean, invertL: Boolean, invertR: Boolean)
+    fun setInputParams(
+        gainDbL: Float,
+        gainDbR: Float,
+        muteL: Boolean,
+        muteR: Boolean,
+        invertL: Boolean,
+        invertR: Boolean,
+        routeSourceL: Int,
+        routeSourceR: Int
+    )
 
-    fun setEqBypass(bypass: Boolean)
+    fun setEqBypass(channelIndex: Int, bypass: Boolean)
 
     fun setEqBand(
+        channelIndex: Int,
         bandIndex: Int,
         enabled: Boolean,
         filterShape: Int,
@@ -29,6 +39,7 @@ interface AudioEngineBridge {
     )
 
     fun setCrossoverParams(
+        channelIndex: Int,
         bypass: Boolean,
         hpfEnabled: Boolean,
         hpfFreqHz: Float,
@@ -40,12 +51,20 @@ interface AudioEngineBridge {
         lpfSlopeDb: Int
     )
 
-    fun setDelayParams(enabled: Boolean, delayMsL: Float, delayMsR: Float)
+    fun setDelayParams(enabledL: Boolean, enabledR: Boolean, delayMsL: Float, delayMsR: Float)
 
-    fun setLimiterParams(enabled: Boolean, thresholdDb: Float, attackMs: Float, releaseMs: Float)
+    fun setLimiterParams(
+        channelIndex: Int,
+        linked: Boolean,
+        enabled: Boolean,
+        thresholdDb: Float,
+        attackMs: Float,
+        releaseMs: Float
+    )
 
     fun setOutputParams(
-        gainDb: Float,
+        gainDbL: Float,
+        gainDbR: Float,
         muteL: Boolean,
         muteR: Boolean,
         invertL: Boolean,
@@ -65,7 +84,7 @@ interface AudioEngineBridge {
 
 class NativeAudioBridge : AudioEngineBridge {
 
-    private val telemetryScratch = FloatArray(21)
+    private val telemetryScratch = FloatArray(23)
 
     override val isNativeLibraryLoaded: Boolean = nativeLoaded
 
@@ -96,17 +115,27 @@ class NativeAudioBridge : AudioEngineBridge {
         nativeSetGlobalState(bypassDsp, muteAll, testSignalMode)
     }
 
-    override fun setInputParams(gainDb: Float, mute: Boolean, invertL: Boolean, invertR: Boolean) {
+    override fun setInputParams(
+        gainDbL: Float,
+        gainDbR: Float,
+        muteL: Boolean,
+        muteR: Boolean,
+        invertL: Boolean,
+        invertR: Boolean,
+        routeSourceL: Int,
+        routeSourceR: Int
+    ) {
         if (!nativeLoaded) return
-        nativeSetInputParams(gainDb, mute, invertL, invertR)
+        nativeSetInputParams(gainDbL, gainDbR, muteL, muteR, invertL, invertR, routeSourceL, routeSourceR)
     }
 
-    override fun setEqBypass(bypass: Boolean) {
+    override fun setEqBypass(channelIndex: Int, bypass: Boolean) {
         if (!nativeLoaded) return
-        nativeSetEqBypass(bypass)
+        nativeSetEqBypass(channelIndex, bypass)
     }
 
     override fun setEqBand(
+        channelIndex: Int,
         bandIndex: Int,
         enabled: Boolean,
         filterShape: Int,
@@ -115,10 +144,11 @@ class NativeAudioBridge : AudioEngineBridge {
         q: Float
     ) {
         if (!nativeLoaded) return
-        nativeSetEqBand(bandIndex, enabled, filterShape, freqHz, gainDb, q)
+        nativeSetEqBand(channelIndex, bandIndex, enabled, filterShape, freqHz, gainDb, q)
     }
 
     override fun setCrossoverParams(
+        channelIndex: Int,
         bypass: Boolean,
         hpfEnabled: Boolean,
         hpfFreqHz: Float,
@@ -131,6 +161,7 @@ class NativeAudioBridge : AudioEngineBridge {
     ) {
         if (!nativeLoaded) return
         nativeSetCrossoverParams(
+            channelIndex,
             bypass,
             hpfEnabled,
             hpfFreqHz,
@@ -143,30 +174,33 @@ class NativeAudioBridge : AudioEngineBridge {
         )
     }
 
-    override fun setDelayParams(enabled: Boolean, delayMsL: Float, delayMsR: Float) {
+    override fun setDelayParams(enabledL: Boolean, enabledR: Boolean, delayMsL: Float, delayMsR: Float) {
         if (!nativeLoaded) return
-        nativeSetDelayParams(enabled, delayMsL, delayMsR)
+        nativeSetDelayParams(enabledL, enabledR, delayMsL, delayMsR)
     }
 
     override fun setLimiterParams(
+        channelIndex: Int,
+        linked: Boolean,
         enabled: Boolean,
         thresholdDb: Float,
         attackMs: Float,
         releaseMs: Float
     ) {
         if (!nativeLoaded) return
-        nativeSetLimiterParams(enabled, thresholdDb, attackMs, releaseMs)
+        nativeSetLimiterParams(channelIndex, linked, enabled, thresholdDb, attackMs, releaseMs)
     }
 
     override fun setOutputParams(
-        gainDb: Float,
+        gainDbL: Float,
+        gainDbR: Float,
         muteL: Boolean,
         muteR: Boolean,
         invertL: Boolean,
         invertR: Boolean
     ) {
         if (!nativeLoaded) return
-        nativeSetOutputParams(gainDb, muteL, muteR, invertL, invertR)
+        nativeSetOutputParams(gainDbL, gainDbR, muteL, muteR, invertL, invertR)
     }
 
     override fun resetPeakHold() {
@@ -205,7 +239,9 @@ class NativeAudioBridge : AudioEngineBridge {
             engineState = AudioEngineState.fromCode(telemetryScratch[19].toInt()),
             audioApi = if (disconnected) AudioApiType.UNSPECIFIED else AudioApiType.fromCode(apiRaw),
             cpuLoadPercent = cpuLoad,
-            streamDisconnected = disconnected
+            streamDisconnected = disconnected,
+            limiterGrDbL = telemetryScratch[21],
+            limiterGrDbR = telemetryScratch[22]
         )
     }
 
@@ -244,9 +280,19 @@ class NativeAudioBridge : AudioEngineBridge {
 
     private external fun nativeStopEngine()
     private external fun nativeSetGlobalState(bypassDsp: Boolean, muteAll: Boolean, testSignalMode: Int)
-    private external fun nativeSetInputParams(gainDb: Float, mute: Boolean, invertL: Boolean, invertR: Boolean)
-    private external fun nativeSetEqBypass(bypass: Boolean)
+    private external fun nativeSetInputParams(
+        gainDbL: Float,
+        gainDbR: Float,
+        muteL: Boolean,
+        muteR: Boolean,
+        invertL: Boolean,
+        invertR: Boolean,
+        routeSourceL: Int,
+        routeSourceR: Int
+    )
+    private external fun nativeSetEqBypass(channelIndex: Int, bypass: Boolean)
     private external fun nativeSetEqBand(
+        channelIndex: Int,
         bandIndex: Int,
         enabled: Boolean,
         filterShape: Int,
@@ -255,6 +301,7 @@ class NativeAudioBridge : AudioEngineBridge {
         q: Float
     )
     private external fun nativeSetCrossoverParams(
+        channelIndex: Int,
         bypass: Boolean,
         hpfEnabled: Boolean,
         hpfFreqHz: Float,
@@ -265,10 +312,23 @@ class NativeAudioBridge : AudioEngineBridge {
         lpfFilterType: Int,
         lpfSlopeDb: Int
     )
-    private external fun nativeSetDelayParams(enabled: Boolean, delayMsL: Float, delayMsR: Float)
-    private external fun nativeSetLimiterParams(enabled: Boolean, thresholdDb: Float, attackMs: Float, releaseMs: Float)
+    private external fun nativeSetDelayParams(
+        enabledL: Boolean,
+        enabledR: Boolean,
+        delayMsL: Float,
+        delayMsR: Float
+    )
+    private external fun nativeSetLimiterParams(
+        channelIndex: Int,
+        linked: Boolean,
+        enabled: Boolean,
+        thresholdDb: Float,
+        attackMs: Float,
+        releaseMs: Float
+    )
     private external fun nativeSetOutputParams(
-        gainDb: Float,
+        gainDbL: Float,
+        gainDbR: Float,
         muteL: Boolean,
         muteR: Boolean,
         invertL: Boolean,

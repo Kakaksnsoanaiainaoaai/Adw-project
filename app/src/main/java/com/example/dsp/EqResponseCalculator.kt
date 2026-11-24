@@ -1,5 +1,6 @@
 package com.example.dsp
 
+import com.example.audio.DspChannel
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -11,7 +12,8 @@ import kotlin.math.sqrt
 
 /**
  * Evaluates the exact combined magnitude response (in dB) of the 5-band Parametric EQ
- * (Peak, Low Shelf, High Shelf) and 12/24/48 dB/oct Crossover filters matching C++ DSP math.
+ * (Peak, Low Shelf, High Shelf) and 12/24/48 dB/oct Crossover filters per channel,
+ * matching C++ DSP math.
  */
 object EqResponseCalculator {
 
@@ -24,13 +26,14 @@ object EqResponseCalculator {
     fun evaluateMagnitudeDb(
         freqHz: Double,
         sampleRate: Double,
-        params: DspParameters
+        params: DspParameters,
+        channel: DspChannel = DspChannel.CH_L
     ): Float {
         if (params.bypassDsp || sampleRate <= 0.0) return 0f
         var totalMag = 1.0
 
-        if (!params.eqBypass) {
-            for (band in params.eqBands) {
+        if (!params.eqBypassFor(channel)) {
+            for (band in params.eqBandsFor(channel)) {
                 if (band.enabled && abs(band.gainDb) >= 0.01f) {
                     val c = when (band.shape) {
                         EqFilterShape.PEAK -> peakingCoeffs(sampleRate, band.freqHz.toDouble(), band.q.toDouble(), band.gainDb.toDouble())
@@ -42,26 +45,26 @@ object EqResponseCalculator {
             }
         }
 
-        if (!params.xoverBypass) {
-            if (params.hpfEnabled && params.hpfSlopeDb != XoverSlopeDb.OFF) {
+        if (!params.xoverBypassFor(channel)) {
+            if (params.hpfEnabledFor(channel) && params.hpfSlopeDbFor(channel) != XoverSlopeDb.OFF) {
                 totalMag *= evaluateXoverSide(
                     isHpf = true,
                     freqHz = freqHz,
                     sampleRate = sampleRate,
-                    cutoffHz = params.hpfFreqHz.toDouble(),
-                    filterType = params.hpfFilterType,
-                    slopeDb = params.hpfSlopeDb
+                    cutoffHz = params.hpfFreqHzFor(channel).toDouble(),
+                    filterType = params.hpfFilterTypeFor(channel),
+                    slopeDb = params.hpfSlopeDbFor(channel)
                 )
             }
 
-            if (params.lpfEnabled && params.lpfSlopeDb != XoverSlopeDb.OFF) {
+            if (params.lpfEnabledFor(channel) && params.lpfSlopeDbFor(channel) != XoverSlopeDb.OFF) {
                 totalMag *= evaluateXoverSide(
                     isHpf = false,
                     freqHz = freqHz,
                     sampleRate = sampleRate,
-                    cutoffHz = params.lpfFreqHz.toDouble(),
-                    filterType = params.lpfFilterType,
-                    slopeDb = params.lpfSlopeDb
+                    cutoffHz = params.lpfFreqHzFor(channel).toDouble(),
+                    filterType = params.lpfFilterTypeFor(channel),
+                    slopeDb = params.lpfSlopeDbFor(channel)
                 )
             }
         }

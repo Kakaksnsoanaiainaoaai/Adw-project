@@ -319,11 +319,11 @@ private fun DspFunctionButtonBar(
         DspModuleTab.entries.forEach { tab ->
             val selected = tab == activeTab
             val moduleActiveLed = when (tab) {
-                DspModuleTab.INPUT -> !p.inputMute
-                DspModuleTab.EQ -> !p.eqBypass && !p.bypassDsp
-                DspModuleTab.XOVER -> !p.xoverBypass && !p.bypassDsp && (p.hpfEnabled || p.lpfEnabled)
-                DspModuleTab.DELAY -> p.delayEnabled && !p.bypassDsp
-                DspModuleTab.LIMITER -> p.limiterEnabled && !p.bypassDsp
+                DspModuleTab.INPUT -> p.anyInputActive
+                DspModuleTab.EQ -> p.anyEqActive && !p.bypassDsp
+                DspModuleTab.XOVER -> p.anyXoverActive && !p.bypassDsp
+                DspModuleTab.DELAY -> p.anyDelayActive && !p.bypassDsp
+                DspModuleTab.LIMITER -> p.anyLimiterActive && !p.bypassDsp
                 DspModuleTab.OUTPUT -> !p.muteAll && (!p.outputMuteL || !p.outputMuteR)
                 DspModuleTab.PLAYER -> uiState.mediaPlayer.isPlaying
                 DspModuleTab.PRESET -> false
