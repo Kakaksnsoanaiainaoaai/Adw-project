@@ -1,0 +1,38 @@
+# Gradle & Build Outputs
+.gradle/
+**/.gradle/
+build/
+**/build/
+/app/build/
+.build-outputs/
+captures/
+*.apk
+*.ap_
+*.aab
+*.dex
+
+# Native / NDK / CMake Caches
+.externalNativeBuild/
+**/.externalNativeBuild/
+.cxx/
+**/.cxx/
+
+# Local & Secrets
+local.properties
+.env
+debug.keystore
+*.jks
+*.keystore
+!debug.keystore.base64
+
+# Kotlin / IDE / OS Temporary Files
+.kotlin/
+*.iml
+.idea/
+!.idea/runConfigurations/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*~

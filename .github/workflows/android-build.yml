@@ -1,0 +1,104 @@
+name: Android Build & Release (ADW VDLMS)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ADW VDLMS APK (ARM64 + NDK/Oboe)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android Platform, Build-Tools, NDK & CMake
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager \
+            "platforms;android-36.1" \
+            "build-tools;36.0.0" \
+            "ndk;27.3.13750724" \
+            "cmake;3.22.1"
+
+      - name: Prepare debug keystore
+        run: |
+          if [ ! -f debug.keystore ]; then
+            if [ -f debug.keystore.base64 ]; then
+              base64 -d debug.keystore.base64 > debug.keystore
+            else
+              keytool -genkey -v \
+                -keystore debug.keystore \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+          fi
+
+      - name: Grant execute permission to Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Run DSP Unit Tests
+        run: ./gradlew :app:testDebugUnitTest --tests "com.example.DspControllerAndMathTest" --no-daemon
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Verify APK and Native ARM64 Libraries
+        run: |
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -s "$APK_PATH" ]; then
+            echo "ERROR: $APK_PATH not found or empty!"
+            exit 1
+          fi
+          ls -lh "$APK_PATH"
+          unzip -l "$APK_PATH" | grep -E "lib/arm64-v8a/libadw_vdlms_engine\.so|lib/arm64-v8a/liboboe\.so"
+
+      - name: Upload APK as GitHub Actions Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADW-VDLMS-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Prepare Release APK Asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p release-assets
+          cp app/build/outputs/apk/debug/app-debug.apk "release-assets/ADW-VDLMS-${{ github.ref_name }}.apk"
+          ls -lh "release-assets/ADW-VDLMS-${{ github.ref_name }}.apk"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "ADW PRODUCTION VDLMS ${{ github.ref_name }}"
+          generate_release_notes: true
+          files: "release-assets/ADW-VDLMS-${{ github.ref_name }}.apk"

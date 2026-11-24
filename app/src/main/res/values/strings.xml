@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">ADW VDLMS</string>
+    <string name="brand_title">ADW PRODUCTION</string>
+    <string name="product_model">VDLMS</string>
+    <string name="product_subtitle">VIRTUAL DIGITAL LOUDSPEAKER MANAGEMENT SYSTEM</string>
+    <string name="dsp_bypass">BYPASS DSP</string>
+    <string name="mute_all">MUTE ALL</string>
+    <string name="grant_audio_permission">ENABLE AUDIO INPUT</string>
+    <string name="audio_permission_rationale">Microphone / USB Audio Input permission is needed for real-time stereo DSP input processing. Output &amp; calibration test signals remain available without input permission.</string>
+</resources>
